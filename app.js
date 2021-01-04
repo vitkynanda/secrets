@@ -8,21 +8,8 @@ const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const findOrCreate = require("mongoose-findorcreate");
-
-// ---Using bcrypt---
-// const bcrypt = require("bcrypt");
-
-// ---Hash password using md5---
-// const md5 = require("md5");
-
-// ---Using mongoose ecrypt---
-// const encrypt = require("mongoose-encryption");
-
+let secret ="";
 const app  = express();
-
-//  ---Salt bcrypt---
-// const saltRounds = 10;
-
 app.use(express.static("public"));
 app.use(bodyParser.urlencoded({
     extended:true
@@ -48,14 +35,11 @@ mongoose.connect("mongodb://localhost/userDB", {useNewUrlParser:true, useUnified
 mongoose.set('useCreateIndex', true);
 
 const userSchema = new mongoose.Schema({
-    email: String,
+    username: String,
     password: String,
-    googleId: String
+    googleId: String, 
+    secret: String
 });
-
-// ---Encrypt password Using mongoosse encrypt---
-// const secret = process.env.SECRET;
-// userSchema.plugin(encrypt, {secret:secret, encryptedFields: ['password']});
 
 userSchema.plugin(passportLocalMongoose);
 userSchema.plugin(findOrCreate);
@@ -81,7 +65,6 @@ passport.use(new GoogleStrategy({
     userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"
   },
   function(accessToken, refreshToken, profile, cb) {
-      console.log(profile);
     User.findOrCreate({ googleId: profile.id }, function (err, user) {
       return cb(err, user);
     });
@@ -94,7 +77,13 @@ app.get("/", function(req, res){
 
 app.get("/secrets", function(req, res){
     if(req.isAuthenticated()){
-        res.render("secrets");
+        User.findOne({_id:req.user.id}, function(err, foundUser){
+            if(!err){
+                let secret = foundUser.secret;
+                res.render("secrets", {secret:secret});    
+            }
+        });
+       
     }else {
         res.redirect("/login");
     }
@@ -110,14 +99,11 @@ app.get("/auth/google/secrets",
   res.redirect("/secrets");
 });
 
-
-
 app.route("/login")
 .get(function(req, res){
     res.render("login");
 })
 .post(function(req,res){
-
     const user = new User({
         username: req.body.username,
         password: req.body.password
@@ -132,26 +118,6 @@ app.route("/login")
             });
         }
     });
-
-    // --Decrypt using bcrypt---
-    // const username = req.body.username;
-    // const password = req.body.password;
-    // User.findOne({email:username}, function(err, foundUser){
-    //     if(err){
-    //         console.log(err);
-    //     } else {
-    //         if (foundUser){
-    //             bcrypt.compare(password, foundUser.password, function(err, result){
-    //                 if (result=== true){
-    //                     res.render("secrets");    
-    //                 } else {
-    //                     console.log("User not registered");
-    //                     res.redirect("/login");
-    //                 }
-    //             });
-    //         }
-    //     }
-    // });
 });
     
 app.route("/register")
@@ -159,7 +125,6 @@ app.route("/register")
     res.render("register");
 })
 .post(function(req, res){
-
     User.register({username:req.body.username}, req.body.password, function(err, user){
         if(err){
             console.log(err);
@@ -169,30 +134,29 @@ app.route("/register")
                 res.redirect("/secrets");
             });
         }
-    })    
-    // ---encrypt password using brypt---
-    // const username = req.body.username;
-    // const password = req.body.password;
-
-    // bcrypt.hash(password, saltRounds, function(err, hash){
-    //     const user = new User ({
-    //         email:username,
-    //         password:hash
-    //     });
-    //     user.save(function(err){
-    //         if(!err){
-    //             console.log("Register new user successfully");
-    //             res.render("secrets");
-    //         } else {
-    //             console.log(err);
-    //         }
-    //     });     
-    // });
-       
+    });       
 });
 
-app.get("/submit", function(req,res){
-    res.render("submit");
+app.route("/submit")
+.get(function(req,res){
+    if (req.isAuthenticated()){
+        res.render("submit");
+    } else {
+        res.redirect("/login");
+    }  
+})
+.post(function(req,res){
+    secret = req.body.secret;
+    User.findById(req.user.id, function(err, foundUser){
+        if(!err){
+            foundUser.secret= secret;
+            foundUser.save(function(err){
+                if(!err){
+                    res.redirect("secrets");
+                }
+            })
+        }
+    });
 });
 
 app.get("/logout", function(req, res){
